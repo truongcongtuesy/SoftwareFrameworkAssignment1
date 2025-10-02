@@ -1,4 +1,4 @@
-const dataStorage = require("../data/dataStorage");
+const mongoStorage = require("../data/mongoStorage");
 
 const connectedUsers = new Map(); // Store connected users: socketId -> userId
 
@@ -7,27 +7,30 @@ module.exports = (io) => {
     console.log("User connected:", socket.id);
 
     // Handle user authentication
-    socket.on("authenticate", (data) => {
+    socket.on("authenticate", async (data) => {
       const { userId, username } = data;
 
       // Store user connection
       connectedUsers.set(socket.id, { userId, username });
 
       // Join user to their groups' channels
-      const user = dataStorage.getUserById(userId);
+      const user = await mongoStorage.getUserById(userId);
       if (user) {
-        const userGroups = dataStorage
-          .getAllGroups()
-          .filter((group) => group.getAllUsers().includes(user.id));
+        const allGroups = await mongoStorage.getAllGroups();
+        const userGroups = allGroups.filter(
+          (group) =>
+            (group.members || []).includes(user.id) ||
+            (group.admins || []).includes(user.id)
+        );
 
-        userGroups.forEach((group) => {
-          const channels = dataStorage.getChannelsByGroupId(group.id);
-          channels.forEach((channel) => {
-            if (channel.isMember(user.id)) {
+        for (const group of userGroups) {
+          const channels = await mongoStorage.getChannelsByGroupId(group.id);
+          for (const channel of channels) {
+            if ((channel.members || []).includes(user.id)) {
               socket.join(`channel_${channel.id}`);
             }
-          });
-        });
+          }
+        }
       }
 
       socket.emit("authenticated", { success: true });
@@ -35,15 +38,15 @@ module.exports = (io) => {
     });
 
     // Handle joining a channel
-    socket.on("join_channel", (data) => {
+    socket.on("join_channel", async (data) => {
       const { channelId, userId } = data;
-      const channel = dataStorage.getChannelById(channelId);
+      const channel = await mongoStorage.getChannelById(channelId);
 
-      if (channel && channel.isMember(userId)) {
+      if (channel && (channel.members || []).includes(userId)) {
         socket.join(`channel_${channelId}`);
 
         // Send recent messages to the user
-        const messages = dataStorage.getMessagesByChannelId(channelId);
+        const messages = await mongoStorage.getMessagesByChannelId(channelId);
         socket.emit("channel_messages", messages);
 
         // Notify other users in the channel
@@ -79,7 +82,7 @@ module.exports = (io) => {
     });
 
     // Handle sending messages
-    socket.on("send_message", (data) => {
+    socket.on("send_message", async (data) => {
       const { channelId, content, type = "text" } = data;
       const userInfo = connectedUsers.get(socket.id);
 
@@ -88,19 +91,19 @@ module.exports = (io) => {
         return;
       }
 
-      const channel = dataStorage.getChannelById(channelId);
-      if (!channel || !channel.isMember(userInfo.userId)) {
+      const channel = await mongoStorage.getChannelById(channelId);
+      if (!channel || !(channel.members || []).includes(userInfo.userId)) {
         socket.emit("error", { message: "Access denied to channel" });
         return;
       }
 
-      if (channel.isBanned(userInfo.userId)) {
+      if ((channel.bannedUsers || []).includes(userInfo.userId)) {
         socket.emit("error", { message: "You are banned from this channel" });
         return;
       }
 
       // Create and save message
-      const message = dataStorage.createMessage({
+      const message = await mongoStorage.createMessage({
         channelId: parseInt(channelId),
         userId: userInfo.userId,
         username: userInfo.username,

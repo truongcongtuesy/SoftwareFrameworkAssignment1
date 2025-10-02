@@ -47,8 +47,23 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Mongo init before listen
+const mongoStorage = require("./data/mongoStorage");
+const schema = require("./config/schema");
+
+async function startServer() {
+  try {
+    await mongoStorage.init();
+    await schema.initialize();
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 module.exports = { app, server, io };

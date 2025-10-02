@@ -1,68 +1,67 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const dataStorage = require('../data/dataStorage');
+const mongoStorage = require("../data/mongoStorage");
 
 // Login route
-router.post('/login', (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
+router.post("/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res
+        .status(400)
+        .json({ error: "Username and password are required" });
+    }
+    const user = await mongoStorage.getUserByUsername(username);
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: "Invalid username or password" });
+    }
+    if (!user.isActive) {
+      return res.status(401).json({ error: "Account is deactivated" });
+    }
+    const { password: _pw, ...userWithoutPassword } = user;
+    res.json({
+      success: true,
+      user: userWithoutPassword,
+      message: "Login successful",
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Login failed" });
   }
-
-  const user = dataStorage.getUserByUsername(username);
-  
-  if (!user || user.password !== password) {
-    return res.status(401).json({ error: 'Invalid username or password' });
-  }
-
-  if (!user.isActive) {
-    return res.status(401).json({ error: 'Account is deactivated' });
-  }
-
-  // Return user data without password
-  res.json({
-    success: true,
-    user: user.toJSON(),
-    message: 'Login successful'
-  });
 });
 
 // Register route
-router.post('/register', (req, res) => {
-  const { username, email, password } = req.body;
-
-  if (!username || !email || !password) {
-    return res.status(400).json({ error: 'Username, email, and password are required' });
-  }
-
-  // Check if username already exists
-  const existingUser = dataStorage.getUserByUsername(username);
-  if (existingUser) {
-    return res.status(400).json({ error: 'Username already exists' });
-  }
-
+router.post("/register", async (req, res) => {
   try {
-    const newUser = dataStorage.createUser({
+    const { username, email, password } = req.body;
+    if (!username || !email || !password) {
+      return res
+        .status(400)
+        .json({ error: "Username, email, and password are required" });
+    }
+    const existingUser = await mongoStorage.getUserByUsername(username);
+    if (existingUser) {
+      return res.status(400).json({ error: "Username already exists" });
+    }
+    const newUser = await mongoStorage.createUser({
       username,
       email,
       password,
-      roles: ['user']
+      roles: ["user"],
     });
-
+    const { password: _pw, ...userWithoutPassword } = newUser;
     res.status(201).json({
       success: true,
-      user: newUser.toJSON(),
-      message: 'User created successfully'
+      user: userWithoutPassword,
+      message: "User created successfully",
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create user' });
+    res.status(500).json({ error: "Failed to create user" });
   }
 });
 
 // Logout route (client-side handling mostly)
-router.post('/logout', (req, res) => {
-  res.json({ success: true, message: 'Logout successful' });
+router.post("/logout", (req, res) => {
+  res.json({ success: true, message: "Logout successful" });
 });
 
 module.exports = router;
