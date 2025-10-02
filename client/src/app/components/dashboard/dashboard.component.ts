@@ -4,6 +4,7 @@ import { Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
 import { GroupService } from '../../services/group.service';
+import { UsersService } from '../../services/users.service';
 import { ChannelService } from '../../services/channel.service';
 import { SocketService } from '../../services/socket.service';
 import { User } from '../../models/user.model';
@@ -22,6 +23,7 @@ import { Subscription } from 'rxjs';
         <div class="navbar-nav">
           <span class="nav-user">Welcome, {{ currentUser?.username }}!</span>
           <span class="nav-role">({{ getUserRoleDisplay() }})</span>
+          <button class="btn btn-danger" (click)="deleteAccount()">Delete Account</button>
           <button class="btn btn-secondary" (click)="logout()">Logout</button>
         </div>
       </nav>
@@ -85,6 +87,12 @@ import { Subscription } from 'rxjs';
           <div class="channel-actions" *ngIf="canManageChannels(selectedGroup)">
             <button class="btn btn-success" (click)="showCreateChannelForm = true">
               Create Channel
+            </button>
+          </div>
+
+          <div class="channel-actions">
+            <button class="btn btn-outline-danger" (click)="leaveSelectedGroup()" [disabled]="!currentUser">
+              Leave Group
             </button>
           </div>
 
@@ -286,6 +294,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     private authService: AuthService,
     private groupService: GroupService,
     private channelService: ChannelService,
+    private usersService: UsersService,
     private socketService: SocketService,
     private router: Router
   ) {}
@@ -409,6 +418,30 @@ export class DashboardComponent implements OnInit, OnDestroy {
   logout() {
     this.authService.logout().subscribe(() => {
       this.router.navigate(['/login']);
+    });
+  }
+
+  deleteAccount() {
+    if (!this.currentUser) return;
+    if (!confirm('Are you sure you want to delete your account? This action cannot be undone.')) return;
+    this.usersService.deleteUser(this.currentUser.id).subscribe({
+      next: () => {
+        this.authService.logout().subscribe(() => this.router.navigate(['/login']));
+      },
+      error: (error) => console.error('Error deleting account:', error)
+    });
+  }
+
+  leaveSelectedGroup() {
+    if (!this.selectedGroup || !this.currentUser) return;
+    if (!confirm(`Leave group "${this.selectedGroup.name}"?`)) return;
+    this.groupService.removeMember(this.selectedGroup.id, this.currentUser.id).subscribe({
+      next: () => {
+        this.loadUserGroups();
+        this.selectedGroup = null;
+        this.groupChannels = [];
+      },
+      error: (error) => console.error('Error leaving group:', error)
     });
   }
 

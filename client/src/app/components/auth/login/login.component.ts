@@ -107,8 +107,10 @@ export class LoginComponent {
 
     this.loading = true;
     this.error = '';
+    const { username, password } = this.loginForm.value;
+    const payload = { username: (username || '').trim(), password: (password || '').trim() };
 
-    this.authService.login(this.loginForm.value).subscribe({
+    this.authService.login(payload).subscribe({
       next: (response) => {
         this.loading = false;
         if (response.success) {

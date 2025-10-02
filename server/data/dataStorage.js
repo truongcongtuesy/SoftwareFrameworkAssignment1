@@ -1,13 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-const User = require('../models/User');
-const Group = require('../models/Group');
-const Channel = require('../models/Channel');
-const Message = require('../models/Message');
+const fs = require("fs");
+const path = require("path");
+const User = require("../models/User");
+const Group = require("../models/Group");
+const Channel = require("../models/Channel");
+const Message = require("../models/Message");
 
 class DataStorage {
   constructor() {
-    this.dataPath = path.join(__dirname, 'storage.json');
+    this.dataPath = path.join(__dirname, "storage.json");
     this.data = {
       users: [],
       groups: [],
@@ -17,10 +17,10 @@ class DataStorage {
         user: 1,
         group: 1,
         channel: 1,
-        message: 1
-      }
+        message: 1,
+      },
     };
-    
+
     this.loadData();
     this.initializeDefaultData();
   }
@@ -29,11 +29,11 @@ class DataStorage {
   loadData() {
     try {
       if (fs.existsSync(this.dataPath)) {
-        const fileData = fs.readFileSync(this.dataPath, 'utf8');
+        const fileData = fs.readFileSync(this.dataPath, "utf8");
         this.data = JSON.parse(fileData);
       }
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error("Error loading data:", error);
       this.data = {
         users: [],
         groups: [],
@@ -43,8 +43,8 @@ class DataStorage {
           user: 1,
           group: 1,
           channel: 1,
-          message: 1
-        }
+          message: 1,
+        },
       };
     }
   }
@@ -55,7 +55,7 @@ class DataStorage {
       // Create a copy of data to avoid modifying original objects
       const dataToSave = {
         ...this.data,
-        users: this.data.users.map(user => ({
+        users: this.data.users.map((user) => ({
           id: user.id,
           username: user.username,
           email: user.email,
@@ -63,12 +63,12 @@ class DataStorage {
           roles: user.roles,
           groups: user.groups,
           createdAt: user.createdAt,
-          isActive: user.isActive
-        }))
+          isActive: user.isActive,
+        })),
       };
       fs.writeFileSync(this.dataPath, JSON.stringify(dataToSave, null, 2));
     } catch (error) {
-      console.error('Error saving data:', error);
+      console.error("Error saving data:", error);
     }
   }
 
@@ -77,11 +77,11 @@ class DataStorage {
     if (this.data.users.length === 0) {
       // Create default super admin user
       const superAdmin = new User(
-        this.getNextId('user'),
-        'super',
-        'super@example.com',
-        '123',
-        ['super-admin']
+        this.getNextId("user"),
+        "super",
+        "super@example.com",
+        "123",
+        ["super-admin"]
       );
       this.data.users.push(superAdmin);
       this.saveData();
@@ -98,17 +98,31 @@ class DataStorage {
 
   // User methods
   getAllUsers() {
-    return this.data.users.map(userData => {
-      const user = new User(userData.id, userData.username, userData.email, userData.password, userData.roles, userData.groups);
+    return this.data.users.map((userData) => {
+      const user = new User(
+        userData.id,
+        userData.username,
+        userData.email,
+        userData.password,
+        userData.roles,
+        userData.groups
+      );
       Object.assign(user, userData);
       return user;
     });
   }
 
   getUserById(id) {
-    const userData = this.data.users.find(user => user.id === parseInt(id));
+    const userData = this.data.users.find((user) => user.id === parseInt(id));
     if (userData) {
-      const user = new User(userData.id, userData.username, userData.email, userData.password, userData.roles, userData.groups);
+      const user = new User(
+        userData.id,
+        userData.username,
+        userData.email,
+        userData.password,
+        userData.roles,
+        userData.groups
+      );
       Object.assign(user, userData);
       return user;
     }
@@ -116,9 +130,16 @@ class DataStorage {
   }
 
   getUserByUsername(username) {
-    const userData = this.data.users.find(user => user.username === username);
+    const userData = this.data.users.find((user) => user.username === username);
     if (userData) {
-      const user = new User(userData.id, userData.username, userData.email, userData.password, userData.roles, userData.groups);
+      const user = new User(
+        userData.id,
+        userData.username,
+        userData.email,
+        userData.password,
+        userData.roles,
+        userData.groups
+      );
       Object.assign(user, userData);
       return user;
     }
@@ -127,11 +148,11 @@ class DataStorage {
 
   createUser(userData) {
     const user = new User(
-      this.getNextId('user'),
+      this.getNextId("user"),
       userData.username,
       userData.email,
       userData.password,
-      userData.roles || ['user'],
+      userData.roles || ["user"],
       userData.groups || []
     );
     this.data.users.push(user);
@@ -140,9 +161,14 @@ class DataStorage {
   }
 
   updateUser(id, updateData) {
-    const userIndex = this.data.users.findIndex(user => user.id === parseInt(id));
+    const userIndex = this.data.users.findIndex(
+      (user) => user.id === parseInt(id)
+    );
     if (userIndex !== -1) {
-      this.data.users[userIndex] = { ...this.data.users[userIndex], ...updateData };
+      this.data.users[userIndex] = {
+        ...this.data.users[userIndex],
+        ...updateData,
+      };
       this.saveData();
       return this.getUserById(id);
     }
@@ -150,7 +176,9 @@ class DataStorage {
   }
 
   deleteUser(id) {
-    const userIndex = this.data.users.findIndex(user => user.id === parseInt(id));
+    const userIndex = this.data.users.findIndex(
+      (user) => user.id === parseInt(id)
+    );
     if (userIndex !== -1) {
       this.data.users.splice(userIndex, 1);
       this.saveData();
@@ -161,17 +189,33 @@ class DataStorage {
 
   // Group methods
   getAllGroups() {
-    return this.data.groups.map(groupData => {
-      const group = new Group(groupData.id, groupData.name, groupData.description, groupData.adminId, groupData.members, groupData.channels);
+    return this.data.groups.map((groupData) => {
+      const group = new Group(
+        groupData.id,
+        groupData.name,
+        groupData.description,
+        groupData.adminId,
+        groupData.members,
+        groupData.channels
+      );
       Object.assign(group, groupData);
       return group;
     });
   }
 
   getGroupById(id) {
-    const groupData = this.data.groups.find(group => group.id === parseInt(id));
+    const groupData = this.data.groups.find(
+      (group) => group.id === parseInt(id)
+    );
     if (groupData) {
-      const group = new Group(groupData.id, groupData.name, groupData.description, groupData.adminId, groupData.members, groupData.channels);
+      const group = new Group(
+        groupData.id,
+        groupData.name,
+        groupData.description,
+        groupData.adminId,
+        groupData.members,
+        groupData.channels
+      );
       Object.assign(group, groupData);
       return group;
     }
@@ -180,7 +224,7 @@ class DataStorage {
 
   createGroup(groupData) {
     const group = new Group(
-      this.getNextId('group'),
+      this.getNextId("group"),
       groupData.name,
       groupData.description,
       groupData.adminId,
@@ -193,9 +237,14 @@ class DataStorage {
   }
 
   updateGroup(id, updateData) {
-    const groupIndex = this.data.groups.findIndex(group => group.id === parseInt(id));
+    const groupIndex = this.data.groups.findIndex(
+      (group) => group.id === parseInt(id)
+    );
     if (groupIndex !== -1) {
-      this.data.groups[groupIndex] = { ...this.data.groups[groupIndex], ...updateData };
+      this.data.groups[groupIndex] = {
+        ...this.data.groups[groupIndex],
+        ...updateData,
+      };
       this.saveData();
       return this.getGroupById(id);
     }
@@ -203,7 +252,9 @@ class DataStorage {
   }
 
   deleteGroup(id) {
-    const groupIndex = this.data.groups.findIndex(group => group.id === parseInt(id));
+    const groupIndex = this.data.groups.findIndex(
+      (group) => group.id === parseInt(id)
+    );
     if (groupIndex !== -1) {
       this.data.groups.splice(groupIndex, 1);
       this.saveData();
@@ -214,17 +265,33 @@ class DataStorage {
 
   // Channel methods
   getAllChannels() {
-    return this.data.channels.map(channelData => {
-      const channel = new Channel(channelData.id, channelData.name, channelData.description, channelData.groupId, channelData.adminId, channelData.members);
+    return this.data.channels.map((channelData) => {
+      const channel = new Channel(
+        channelData.id,
+        channelData.name,
+        channelData.description,
+        channelData.groupId,
+        channelData.adminId,
+        channelData.members
+      );
       Object.assign(channel, channelData);
       return channel;
     });
   }
 
   getChannelById(id) {
-    const channelData = this.data.channels.find(channel => channel.id === parseInt(id));
+    const channelData = this.data.channels.find(
+      (channel) => channel.id === parseInt(id)
+    );
     if (channelData) {
-      const channel = new Channel(channelData.id, channelData.name, channelData.description, channelData.groupId, channelData.adminId, channelData.members);
+      const channel = new Channel(
+        channelData.id,
+        channelData.name,
+        channelData.description,
+        channelData.groupId,
+        channelData.adminId,
+        channelData.members
+      );
       Object.assign(channel, channelData);
       return channel;
     }
@@ -232,12 +299,25 @@ class DataStorage {
   }
 
   getChannelsByGroupId(groupId) {
-    return this.data.channels.filter(channel => channel.groupId === parseInt(groupId));
+    return this.data.channels
+      .filter((channel) => channel.groupId === parseInt(groupId))
+      .map((channelData) => {
+        const channel = new Channel(
+          channelData.id,
+          channelData.name,
+          channelData.description,
+          channelData.groupId,
+          channelData.adminId,
+          channelData.members
+        );
+        Object.assign(channel, channelData);
+        return channel;
+      });
   }
 
   createChannel(channelData) {
     const channel = new Channel(
-      this.getNextId('channel'),
+      this.getNextId("channel"),
       channelData.name,
       channelData.description,
       channelData.groupId,
@@ -250,9 +330,14 @@ class DataStorage {
   }
 
   updateChannel(id, updateData) {
-    const channelIndex = this.data.channels.findIndex(channel => channel.id === parseInt(id));
+    const channelIndex = this.data.channels.findIndex(
+      (channel) => channel.id === parseInt(id)
+    );
     if (channelIndex !== -1) {
-      this.data.channels[channelIndex] = { ...this.data.channels[channelIndex], ...updateData };
+      this.data.channels[channelIndex] = {
+        ...this.data.channels[channelIndex],
+        ...updateData,
+      };
       this.saveData();
       return this.getChannelById(id);
     }
@@ -260,7 +345,9 @@ class DataStorage {
   }
 
   deleteChannel(id) {
-    const channelIndex = this.data.channels.findIndex(channel => channel.id === parseInt(id));
+    const channelIndex = this.data.channels.findIndex(
+      (channel) => channel.id === parseInt(id)
+    );
     if (channelIndex !== -1) {
       this.data.channels.splice(channelIndex, 1);
       this.saveData();
@@ -271,17 +358,19 @@ class DataStorage {
 
   // Message methods
   getMessagesByChannelId(channelId) {
-    return this.data.messages.filter(message => message.channelId === parseInt(channelId));
+    return this.data.messages.filter(
+      (message) => message.channelId === parseInt(channelId)
+    );
   }
 
   createMessage(messageData) {
     const message = new Message(
-      this.getNextId('message'),
+      this.getNextId("message"),
       messageData.channelId,
       messageData.userId,
       messageData.username,
       messageData.content,
-      messageData.type || 'text'
+      messageData.type || "text"
     );
     this.data.messages.push(message);
     this.saveData();

@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { GroupService } from '../../services/group.service';
+import { ChannelService } from '../../services/channel.service';
+import { UsersService } from '../../services/users.service';
 import { User } from '../../models/user.model';
 import { Group } from '../../models/group.model';
 
@@ -487,6 +489,8 @@ export class AdminComponent implements OnInit {
   constructor(
     public authService: AuthService,
     private groupService: GroupService,
+    private channelService: ChannelService,
+    private usersService: UsersService,
     private router: Router
   ) {}
 
@@ -506,8 +510,12 @@ export class AdminComponent implements OnInit {
   }
 
   loadAllUsers() {
-    // Implementation to load all users
-    console.log('Loading all users...');
+    this.usersService.getAllUsers().subscribe({
+      next: (users) => {
+        this.allUsers = users;
+      },
+      error: (error) => console.error('Error loading users:', error)
+    });
   }
 
   loadGroups() {
@@ -617,9 +625,19 @@ export class AdminComponent implements OnInit {
 
   createChannel() {
     if (!this.newChannel.name.trim() || !this.selectedGroup) return;
-
-    // Implementation for creating channel
-    console.log('Creating channel:', this.newChannel);
+    const payload = {
+      name: this.newChannel.name,
+      description: this.newChannel.description,
+      groupId: this.selectedGroup.id,
+      adminId: this.currentUser!.id
+    };
+    this.channelService.createChannel(payload).subscribe({
+      next: () => {
+        this.loadGroupChannels();
+        this.cancelCreateChannel();
+      },
+      error: (error) => console.error('Error creating channel:', error)
+    });
   }
 
   cancelCreateChannel() {
@@ -629,25 +647,33 @@ export class AdminComponent implements OnInit {
 
   deleteChannel(channelId: number) {
     if (confirm('Are you sure you want to delete this channel?')) {
-      // Implementation for deleting channel
-      console.log('Deleting channel:', channelId);
+      this.channelService.deleteChannel(channelId).subscribe({
+        next: () => this.loadGroupChannels(),
+        error: (error) => console.error('Error deleting channel:', error)
+      });
     }
   }
 
   promoteUser(userId: number, role: string) {
-    // Implementation for promoting user
-    console.log('Promoting user:', userId, 'to', role);
+    this.usersService.promoteUser(userId, role as 'group-admin' | 'super-admin').subscribe({
+      next: () => this.loadAllUsers(),
+      error: (error) => console.error('Error promoting user:', error)
+    });
   }
 
   demoteUser(userId: number, role: string) {
-    // Implementation for demoting user
-    console.log('Demoting user:', userId, 'from', role);
+    this.usersService.demoteUser(userId, role as 'group-admin' | 'super-admin').subscribe({
+      next: () => this.loadAllUsers(),
+      error: (error) => console.error('Error demoting user:', error)
+    });
   }
 
   deleteUser(userId: number) {
     if (confirm('Are you sure you want to delete this user?')) {
-      // Implementation for deleting user
-      console.log('Deleting user:', userId);
+      this.usersService.deleteUser(userId).subscribe({
+        next: () => this.loadAllUsers(),
+        error: (error) => console.error('Error deleting user:', error)
+      });
     }
   }
 

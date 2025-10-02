@@ -250,16 +250,67 @@ The client will run on `http://localhost:4200`
 ## Development Notes
 
 ### Data Storage
-Currently using local file-based storage (`server/data/storage.json`) as specified in the assignment requirements. This will be replaced with MongoDB in future phases.
+Currently using file-based storage on the server (`server/data/storage.json`) and browser `localStorage` for the authenticated user. This will be replaced with MongoDB in a later phase.
 
 ### Authentication
-Simple username/password authentication as specified. Production applications should use more secure methods like JWT tokens, password hashing, etc.
+Simple username/password authentication. On login success, the user object is stored in `localStorage` and propagated via `AuthService` (`BehaviorSubject`). Logout always clears client state even if the `/logout` request fails (defensive UX).
 
 ### Real-time Features
-- All chat messages are delivered in real-time using Socket.io
-- Typing indicators show when users are typing
-- User presence (join/leave) notifications
-- Video calling using WebRTC through PeerJS
+- Socket.io delivers chat messages in real-time
+- Typing indicators and presence (join/leave)
+- WebRTC signaling scaffolding exists; PeerJS integration deferred
+
+## Angular Architecture Details
+
+### Components
+- `LoginComponent`: login form, saves user to `localStorage` on success
+- `RegisterComponent`: registration form
+- `DashboardComponent`: lists user groups, create group/channel, join channel, leave group, delete account
+- `ChatComponent`: real-time messages, typing indicator (video call UI scaffold)
+- `AdminComponent`: manage users (super admin) and groups/channels
+
+### Services
+- `AuthService`: auth state management, login/register/logout
+- `GroupService`: CRUD groups, membership
+- `ChannelService`: CRUD channels, membership/ban
+- `SocketService`: Socket.io client, message/typing streams, signaling
+- `UsersService`: user management (get/update/delete, promote/demote)
+
+### Guards
+- `AuthGuard`: requires authentication for protected routes
+- `RoleGuard`: requires roles for admin routes (`group-admin`, `super-admin`)
+
+### Routes
+Protected: `dashboard`, `chat/:groupId/:channelId` (auth), `admin` (auth + role)
+
+## Node Server Architecture Details
+
+### Modules/Files
+- `server.js`: Express app, routes mount, Socket.io init
+- `routes/*`: `auth`, `users`, `groups`, `channels`
+- `sockets/socketHandler.js`: socket events (auth, join/leave, messaging, typing, signaling)
+- `data/dataStorage.js`: JSON persistence; constructs model instances to preserve methods
+- `models/*`: `User`, `Group`, `Channel`, `Message`
+
+### Global State
+- In-memory `connectedUsers` map in `socketHandler`
+
+## REST API Summary
+
+See sections above; highlights:
+- `POST /api/auth/login|register|logout`
+- `/api/users`: GET all/one, PUT update, DELETE, POST `/:id/promote|demote`, GET `/:id/groups`
+- `/api/groups`: CRUD, members (add/remove), list members and channels
+- `/api/channels`: CRUD, messages, members (add/remove), ban/unban
+
+## Client-Server Interaction Flow
+
+1) Login: client posts credentials → server validates against `dataStorage` → client stores user → guards allow access.
+2) Dashboard: client loads groups → filters by membership/adminship → can create group → server persists and returns → UI refreshes.
+3) Channels: client loads channels per group → create channel via REST → list refreshes.
+4) Chat: client authenticates socket, joins channel → server emits history and relays new messages → UI updates via observable.
+5) Admin: super admin fetches users, promote/demote/delete via users API → UI reloads list.
+6) Leave Group/Delete Account: client hits respective endpoints → updates local state/navigation.
 
 ### Responsive Design
 The application is designed to work on both desktop and mobile devices with responsive CSS.
