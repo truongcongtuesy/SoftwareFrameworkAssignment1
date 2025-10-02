@@ -41,22 +41,26 @@ router.post("/", async (req, res) => {
   const isSuper = (admin.roles || []).includes("super-admin");
   const isGroupAdmin = (group.admins || []).includes(parseInt(adminId));
   if (!isSuper && !isGroupAdmin) {
-    return res
-      .status(403)
-      .json({
-        error: "User does not have permission to create channels in this group",
-      });
+    return res.status(403).json({
+      error: "User does not have permission to create channels in this group",
+    });
   }
 
   try {
+    // Ensure admin is included in members
+    const allGroupMembers = Array.from(
+      new Set([...(group.members || []), ...(group.admins || [])])
+    );
+    if (!allGroupMembers.includes(parseInt(adminId))) {
+      allGroupMembers.push(parseInt(adminId));
+    }
+
     const newChannel = await mongoStorage.createChannel({
       name,
       description: description || "",
       groupId: parseInt(groupId),
       adminId: parseInt(adminId),
-      members: Array.from(
-        new Set([...(group.members || []), ...(group.admins || [])])
-      ),
+      members: allGroupMembers,
     });
 
     const updatedChannels = Array.from(

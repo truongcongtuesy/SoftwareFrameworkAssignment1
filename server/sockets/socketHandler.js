@@ -42,26 +42,52 @@ module.exports = (io) => {
       const { channelId, userId } = data;
       const channel = await mongoStorage.getChannelById(channelId);
 
-      if (channel && (channel.members || []).includes(userId)) {
-        socket.join(`channel_${channelId}`);
-
-        // Send recent messages to the user
-        const messages = await mongoStorage.getMessagesByChannelId(channelId);
-        socket.emit("channel_messages", messages);
-
-        // Notify other users in the channel
-        const userInfo = connectedUsers.get(socket.id);
-        if (userInfo) {
-          socket.to(`channel_${channelId}`).emit("user_joined", {
-            username: userInfo.username,
-            channelId,
-          });
-        }
-
-        console.log(`User joined channel ${channelId}`);
-      } else {
-        socket.emit("error", { message: "Access denied to channel" });
+      if (!channel) {
+        socket.emit("error", { message: "Channel not found" });
+        return;
       }
+
+      // Check if user is member of the group that owns this channel
+      const group = await mongoStorage.getGroupById(channel.groupId);
+      if (!group) {
+        socket.emit("error", { message: "Group not found" });
+        return;
+      }
+
+      const isGroupMember =
+        (group.members || []).includes(userId) ||
+        (group.admins || []).includes(userId);
+      if (!isGroupMember) {
+        socket.emit("error", {
+          message: "You must be a member of the group to join this channel",
+        });
+        return;
+      }
+
+      // Add user to channel members if not already there
+      if (!(channel.members || []).includes(userId)) {
+        const updatedMembers = [...(channel.members || []), userId];
+        await mongoStorage.updateChannel(channelId, {
+          members: updatedMembers,
+        });
+      }
+
+      socket.join(`channel_${channelId}`);
+
+      // Send recent messages to the user
+      const messages = await mongoStorage.getMessagesByChannelId(channelId);
+      socket.emit("channel_messages", messages);
+
+      // Notify other users in the channel
+      const userInfo = connectedUsers.get(socket.id);
+      if (userInfo) {
+        socket.to(`channel_${channelId}`).emit("user_joined", {
+          username: userInfo.username,
+          channelId,
+        });
+      }
+
+      console.log(`User joined channel ${channelId}`);
     });
 
     // Handle leaving a channel

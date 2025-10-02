@@ -24,7 +24,7 @@ export interface Message {
   userId: number;
   username: string;
   content: string;
-  type: 'text' | 'image' | 'file' | 'video-call';
+  type: 'text' | 'image' | 'file' | 'video-call' | 'system';
   timestamp: Date;
   edited: boolean;
   editedAt?: Date;

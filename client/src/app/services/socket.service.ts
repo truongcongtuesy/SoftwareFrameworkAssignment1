@@ -19,6 +19,15 @@ export class SocketService {
   private typingUsersSubject = new BehaviorSubject<string[]>([]);
   public typingUsers$ = this.typingUsersSubject.asObservable();
 
+  private userJoinedSubject = new BehaviorSubject<any>(null);
+  public userJoined$ = this.userJoinedSubject.asObservable();
+
+  private userLeftSubject = new BehaviorSubject<any>(null);
+  public userLeft$ = this.userLeftSubject.asObservable();
+
+  private authenticatedSubject = new BehaviorSubject<boolean>(false);
+  public authenticated$ = this.authenticatedSubject.asObservable();
+
   constructor(private http: HttpClient) {}
 
   connect(userId: number, username: string): void {
@@ -35,6 +44,7 @@ export class SocketService {
 
       this.socket.on('authenticated', (data: any) => {
         console.log('User authenticated:', data);
+        this.authenticatedSubject.next(true);
       });
 
       this.socket.on('new_message', (message: Message) => {
@@ -58,6 +68,14 @@ export class SocketService {
         this.typingUsersSubject.next(currentTyping.filter(user => user !== data.username));
       });
 
+      this.socket.on('user_joined', (data: any) => {
+        this.userJoinedSubject.next(data);
+      });
+
+      this.socket.on('user_left', (data: any) => {
+        this.userLeftSubject.next(data);
+      });
+
       this.socket.on('error', (error: any) => {
         console.error('Socket error:', error);
       });
@@ -65,6 +83,7 @@ export class SocketService {
       this.socket.on('disconnect', () => {
         console.log('Disconnected from server');
         this.connected = false;
+        this.authenticatedSubject.next(false);
       });
     }
   }
@@ -73,6 +92,7 @@ export class SocketService {
     if (this.socket && this.connected) {
       this.socket.disconnect();
       this.connected = false;
+      this.authenticatedSubject.next(false);
     }
   }
 
@@ -162,5 +182,18 @@ export class SocketService {
 
   clearMessages(): void {
     this.messagesSubject.next([]);
+  }
+
+  // Get user join/leave events
+  onUserJoined(): Observable<any> {
+    return this.userJoined$;
+  }
+
+  onUserLeft(): Observable<any> {
+    return this.userLeft$;
+  }
+
+  onAuthenticated(): Observable<boolean> {
+    return this.authenticated$;
   }
 }

@@ -23,7 +23,7 @@ import { User } from '../../models/user.model';
           <h3>{{ groupName }} / {{ channelName }}</h3>
         </div>
         <div class="header-right">
-          <span class="user-count">{{ channelMembers?.length || 0 }} members</span>
+          <span class="user-count">{{ channelMembers.length || 0 }} members</span>
           <button class="btn btn-primary" (click)="startVideoCall()" [disabled]="!canStartVideoCall()">
             📹 Video Call
           </button>
@@ -33,12 +33,16 @@ import { User } from '../../models/user.model';
       <!-- Chat Messages -->
       <div class="chat-messages" #messagesContainer>
         <div *ngFor="let message of messages" class="message" 
-             [class.own-message]="message.userId === currentUser?.id">
-          <div class="message-header">
+             [class.own-message]="message.userId === currentUser?.id"
+             [class.system-message]="message.type === 'system'">
+          <div *ngIf="message.type !== 'system'" class="message-header">
             <span class="message-author">{{ message.username }}</span>
             <span class="message-time">{{ formatTime(message.timestamp) }}</span>
           </div>
-          <div class="message-content">{{ message.content }}</div>
+          <div *ngIf="message.type === 'system'" class="system-message-content">
+            {{ message.content }}
+          </div>
+          <div *ngIf="message.type !== 'system'" class="message-content">{{ message.content }}</div>
         </div>
         
         <!-- Typing Indicators -->
@@ -170,6 +174,21 @@ import { User } from '../../models/user.model';
       border-radius: 15px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       word-wrap: break-word;
+    }
+
+    .system-message {
+      text-align: center;
+      margin: 10px 0;
+    }
+
+    .system-message-content {
+      background: #e9ecef;
+      color: #6c757d;
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-style: italic;
+      display: inline-block;
     }
 
     .typing-indicator {
@@ -319,18 +338,27 @@ export class ChatComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Ensure socket connected & authenticated
+    this.socketService.connect(this.currentUser.id, this.currentUser.username);
+
     // Get route parameters
     this.route.params.subscribe(params => {
       this.groupId = +params['groupId'];
       this.channelId = +params['channelId'];
       this.loadChannelData();
+
+      // Wait for authenticated then join the channel
+      const authSub = this.socketService.onAuthenticated().subscribe(isAuth => {
+        if (isAuth) {
+          this.socketService.joinChannel(this.channelId, this.currentUser!.id);
+          authSub.unsubscribe();
+        }
+      });
+      this.subscriptions.push(authSub);
     });
 
     // Setup socket subscriptions
     this.setupSocketListeners();
-    
-    // Join the channel
-    this.socketService.joinChannel(this.channelId, this.currentUser.id);
   }
 
   ngOnDestroy() {
@@ -372,12 +400,49 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.typingUsers = users.filter(user => user !== this.currentUser?.username);
     });
 
+    // User join/leave notifications
+    const userJoinedSub = this.socketService.onUserJoined().subscribe(data => {
+      if (data && data.username !== this.currentUser?.username) {
+        // Add system message to chat
+        const systemMessage: Message = {
+          id: Date.now(), // Temporary ID for system messages
+          channelId: this.channelId,
+          userId: 0, // System user
+          username: 'System',
+          content: `${data.username} joined the channel`,
+          type: 'system',
+          timestamp: new Date(),
+          edited: false
+        };
+        this.messages.push(systemMessage);
+        setTimeout(() => this.scrollToBottom(), 100);
+      }
+    });
+
+    const userLeftSub = this.socketService.onUserLeft().subscribe(data => {
+      if (data && data.username !== this.currentUser?.username) {
+        // Add system message to chat
+        const systemMessage: Message = {
+          id: Date.now(), // Temporary ID for system messages
+          channelId: this.channelId,
+          userId: 0, // System user
+          username: 'System',
+          content: `${data.username} left the channel`,
+          type: 'system',
+          timestamp: new Date(),
+          edited: false
+        };
+        this.messages.push(systemMessage);
+        setTimeout(() => this.scrollToBottom(), 100);
+      }
+    });
+
     // Video call events
     const callOfferSub = this.socketService.onVideoCallOffer().subscribe(data => {
       this.incomingCall = data;
     });
 
-    this.subscriptions.push(messagesSub, typingSub, callOfferSub);
+    this.subscriptions.push(messagesSub, typingSub, userJoinedSub, userLeftSub, callOfferSub);
   }
 
   sendMessage() {
@@ -419,7 +484,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   scrollToBottom() {
     const container = document.querySelector('.chat-messages');
     if (container) {
-      container.scrollTop = container.scrollHeight;
+      (container as HTMLElement).scrollTop = (container as HTMLElement).scrollHeight;
     }
   }
 
@@ -437,12 +502,10 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   // Video call methods
   async startVideoCall() {
-    // Implementation for starting video call
     console.log('Starting video call...');
   }
 
   acceptCall() {
-    // Implementation for accepting call
     console.log('Accepting call...');
     this.incomingCall = null;
     this.isInCall = true;
