@@ -4,6 +4,7 @@ import { Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../services/auth.service';
 import { GroupService } from '../../services/group.service';
+import { ChannelService } from '../../services/channel.service';
 import { SocketService } from '../../services/socket.service';
 import { User } from '../../models/user.model';
 import { Group } from '../../models/group.model';
@@ -284,6 +285,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   constructor(
     private authService: AuthService,
     private groupService: GroupService,
+    private channelService: ChannelService,
     private socketService: SocketService,
     private router: Router
   ) {}
@@ -381,7 +383,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       adminId: this.currentUser.id
     };
 
-    const sub = this.groupService.createGroup(channelData).subscribe({
+    const sub = this.channelService.createChannel(channelData).subscribe({
       next: (response) => {
         this.loadGroupChannels(this.selectedGroup!.id);
         this.cancelCreateChannel();
