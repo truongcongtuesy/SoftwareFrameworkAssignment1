@@ -71,4 +71,13 @@ export class AuthService {
   isUser(): boolean {
     return this.hasRole('user');
   }
+
+  setCurrentUser(user: User | null): void {
+    if (user) {
+      localStorage.setItem('currentUser', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('currentUser');
+    }
+    this.currentUserSubject.next(user);
+  }
 }

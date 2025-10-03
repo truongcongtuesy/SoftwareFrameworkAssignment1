@@ -21,8 +21,11 @@ import { Subscription } from 'rxjs';
       <nav class="navbar">
         <div class="navbar-brand">Chat System</div>
         <div class="navbar-nav">
+          <img *ngIf="currentUser?.avatarUrl" [src]="getAvatarUrl()" class="nav-avatar" alt="avatar">
           <span class="nav-user">Welcome, {{ currentUser?.username }}!</span>
           <span class="nav-role">({{ getUserRoleDisplay() }})</span>
+          <label class="btn btn-outline-primary" for="avatarInput">Upload Avatar</label>
+          <input id="avatarInput" type="file" (change)="onAvatarSelected($event)" accept="image/*" style="display:none;" />
           <button class="btn btn-danger" (click)="deleteAccount()">Delete Account</button>
           <button class="btn btn-secondary" (click)="logout()">Logout</button>
         </div>
@@ -156,6 +159,14 @@ import { Subscription } from 'rxjs';
       gap: 15px;
     }
 
+    .nav-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #fff;
+    }
+
     .nav-user {
       font-weight: 500;
     }
@@ -277,6 +288,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   groupChannels: any[] = [];
   showCreateGroupForm = false;
   showCreateChannelForm = false;
+  avatarVersion = 0;
   
   newGroup = {
     name: '',
@@ -301,6 +313,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.currentUser = this.authService.getCurrentUser();
+    const authSub = this.authService.currentUser$.subscribe(u => {
+      this.currentUser = u;
+      this.avatarVersion++;
+    });
+    this.subscriptions.push(authSub);
     
     if (!this.currentUser) {
       this.router.navigate(['/login']);
@@ -430,6 +447,29 @@ export class DashboardComponent implements OnInit, OnDestroy {
       },
       error: (error) => console.error('Error deleting account:', error)
     });
+  }
+
+  onAvatarSelected(event: Event) {
+    if (!this.currentUser) return;
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    this.usersService.uploadAvatar(this.currentUser.id, file).subscribe({
+      next: (res: any) => {
+        const updatedUser = res.user;
+        this.authService.setCurrentUser(updatedUser);
+      },
+      error: (err) => console.error('Upload avatar failed:', err)
+    });
+  }
+
+  getAvatarUrl(): string {
+    const u: any = this.currentUser as any;
+    const url: string | undefined = u && u.avatarUrl ? u.avatarUrl : undefined;
+    if (!url) return '';
+    // Server serves /uploads statically
+    const base = url.startsWith('http') ? url : `http://localhost:3000${url}`;
+    return `${base}?v=${this.avatarVersion}`;
   }
 
   leaveSelectedGroup() {

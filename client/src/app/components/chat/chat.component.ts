@@ -36,13 +36,22 @@ import { User } from '../../models/user.model';
              [class.own-message]="message.userId === currentUser?.id"
              [class.system-message]="message.type === 'system'">
           <div *ngIf="message.type !== 'system'" class="message-header">
-            <span class="message-author">{{ message.username }}</span>
+            <span class="message-author">
+              <img *ngIf="getAvatarUrlByUserId(message.userId)" [src]="getAvatarUrlByUserId(message.userId)" class="msg-avatar" alt="avatar">
+              {{ message.username }}
+            </span>
             <span class="message-time">{{ formatTime(message.timestamp) }}</span>
           </div>
           <div *ngIf="message.type === 'system'" class="system-message-content">
             {{ message.content }}
           </div>
-          <div *ngIf="message.type !== 'system'" class="message-content">{{ message.content }}</div>
+          <div *ngIf="message.type === 'image'" class="image-message">
+            <img [src]="resolveMessageImage(message.content)" alt="image" class="chat-image" (click)="openImagePreview(resolveMessageImage(message.content))">
+          </div>
+          <div *ngIf="message.type === 'video'" class="image-message">
+            <video class="chat-image" controls [src]="resolveMessageImage(message.content)"></video>
+          </div>
+          <div *ngIf="message.type !== 'system' && message.type !== 'image' && message.type !== 'video'" class="message-content">{{ message.content }}</div>
         </div>
         
         <!-- Typing Indicators -->
@@ -54,6 +63,10 @@ import { User } from '../../models/user.model';
       <!-- Chat Input -->
       <div class="chat-input">
         <div class="input-group">
+          <label class="btn btn-outline-secondary attach-btn" for="imageInput">📎</label>
+          <input id="imageInput" type="file" (change)="onImageSelected($event)" accept="image/*" style="display:none;" />
+          <label class="btn btn-outline-secondary attach-btn" for="videoInput">🎞</label>
+          <input id="videoInput" type="file" (change)="onVideoSelected($event)" accept="video/*" style="display:none;" />
           <input 
             type="text" 
             class="form-control" 
@@ -94,6 +107,11 @@ import { User } from '../../models/user.model';
         <div class="call-controls">
           <button class="btn btn-danger" (click)="endCall()">End Call</button>
         </div>
+      </div>
+      
+      <!-- Image Preview Modal -->
+      <div *ngIf="previewImageUrl" class="img-preview-overlay" (click)="closeImagePreview()">
+        <img class="img-preview-content" [src]="previewImageUrl" alt="preview">
       </div>
     </div>
   `,
@@ -140,7 +158,7 @@ import { User } from '../../models/user.model';
 
     .message {
       margin-bottom: 15px;
-      max-width: 70%;
+      max-width: 35%;
     }
 
     .message.own-message {
@@ -176,8 +194,35 @@ import { User } from '../../models/user.model';
       word-wrap: break-word;
     }
 
+    .msg-avatar {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      object-fit: cover;
+      margin-right: 8px;
+      vertical-align: middle;
+      border: 1px solid #ddd;
+    }
+
+    .image-message {
+      margin: 10px 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    .chat-image {
+      display: block;
+      max-width: 320px;
+      width: 100%;
+      height: auto;
+      border-radius: 10px;
+    }
+
     .system-message {
-      text-align: center;
+      display: flex;
+      justify-content: center;
+      max-width: 100%;
       margin: 10px 0;
     }
 
@@ -210,6 +255,13 @@ import { User } from '../../models/user.model';
 
     .input-group .form-control {
       flex: 1;
+    }
+
+    .attach-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 40px;
     }
 
     .video-call-modal {
@@ -298,6 +350,24 @@ import { User } from '../../models/user.model';
         height: 90px;
       }
     }
+
+    /* Image preview modal */
+    .img-preview-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+      cursor: zoom-out;
+    }
+    .img-preview-content {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
   `]
 })
 export class ChatComponent implements OnInit, OnDestroy {
@@ -309,7 +379,8 @@ export class ChatComponent implements OnInit, OnDestroy {
   messages: Message[] = [];
   newMessage = '';
   typingUsers: string[] = [];
-  channelMembers: any[] = [];
+  channelMembers: number[] = [];
+  memberUsers: User[] = [];
   
   // Video call properties
   incomingCall: any = null;
@@ -317,6 +388,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   localStream: MediaStream | null = null;
   remoteStream: MediaStream | null = null;
   peerConnection: RTCPeerConnection | null = null;
+  previewImageUrl: string | null = null;
 
   private subscriptions: Subscription[] = [];
   private typingTimer: any;
@@ -385,7 +457,15 @@ export class ChatComponent implements OnInit, OnDestroy {
       error: (error) => console.error('Error loading channel:', error)
     });
 
-    this.subscriptions.push(groupSub, channelSub);
+    // Load group members with avatar info
+    const membersSub = this.groupService.getGroupMembers(this.groupId).subscribe({
+      next: (users) => {
+        this.memberUsers = users;
+      },
+      error: (error) => console.error('Error loading group members:', error)
+    });
+
+    this.subscriptions.push(groupSub, channelSub, membersSub);
   }
 
   setupSocketListeners() {
@@ -453,6 +533,45 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.socketService.stopTyping(this.channelId);
   }
 
+  onImageSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0 || !this.currentUser) return;
+    const file = input.files[0];
+    const form = new FormData();
+    form.append('image', file);
+    form.append('userId', String(this.currentUser.id));
+    form.append('username', this.currentUser.username);
+    // Upload to server image message endpoint
+    fetch(`http://localhost:3000/api/channels/${this.channelId}/messages/image`, {
+      method: 'POST',
+      body: form
+    }).then(async (res) => {
+      if (!res.ok) throw new Error('Upload failed');
+      // Do not append here; rely on socket 'new_message' to avoid duplicates
+      await res.json().catch(() => ({}));
+    }).catch(err => console.error('Upload image message failed:', err));
+    // reset input
+    (event.target as HTMLInputElement).value = '';
+  }
+
+  onVideoSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0 || !this.currentUser) return;
+    const file = input.files[0];
+    const form = new FormData();
+    form.append('video', file);
+    form.append('userId', String(this.currentUser.id));
+    form.append('username', this.currentUser.username);
+    fetch(`http://localhost:3000/api/channels/${this.channelId}/messages/video`, {
+      method: 'POST',
+      body: form
+    }).then(async (res) => {
+      if (!res.ok) throw new Error('Upload failed');
+      await res.json().catch(() => ({}));
+    }).catch(err => console.error('Upload video message failed:', err));
+    (event.target as HTMLInputElement).value = '';
+  }
+
   onKeyDown(event: KeyboardEvent) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -497,7 +616,30 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   canStartVideoCall(): boolean {
-    return this.channelMembers && this.channelMembers.length > 1;
+    const count = this.memberUsers?.length ? this.memberUsers.length : (this.channelMembers?.length || 0);
+    return count > 1;
+  }
+
+  getAvatarUrlByUserId(userId: number): string {
+    // Find from detailed member users loaded from server
+    const member = (this.memberUsers || []).find((m: any) => m?.id === userId);
+    const avatarUrl: string | undefined = (member as any)?.avatarUrl;
+    if (!avatarUrl) return '';
+    if (avatarUrl.startsWith('http')) return avatarUrl;
+    return `http://localhost:3000${avatarUrl}`;
+  }
+
+  resolveMessageImage(pathStr: string): string {
+    if (!pathStr) return '';
+    return pathStr.startsWith('http') ? pathStr : `http://localhost:3000${pathStr}`;
+  }
+
+  openImagePreview(url: string) {
+    this.previewImageUrl = url;
+  }
+
+  closeImagePreview() {
+    this.previewImageUrl = null;
   }
 
   // Video call methods

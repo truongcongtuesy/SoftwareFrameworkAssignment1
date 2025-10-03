@@ -1,6 +1,22 @@
 const express = require("express");
 const router = express.Router();
 const mongoStorage = require("../data/mongoStorage");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+// Multer storage for avatars
+const avatarStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, "..", "uploads", "avatars");
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `avatar_${Date.now()}${ext}`);
+  },
+});
+const uploadAvatar = multer({ storage: avatarStorage });
 
 // Get all users (Super Admin only)
 router.get("/", async (req, res) => {
@@ -38,6 +54,23 @@ router.delete("/:id", async (req, res) => {
   const success = await mongoStorage.deleteUser(id);
   if (!success) return res.status(404).json({ error: "User not found" });
   res.json({ success: true, message: "User deleted successfully" });
+});
+
+// Upload avatar
+router.post("/:id/avatar", uploadAvatar.single("avatar"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const relativePath = `/uploads/avatars/${req.file.filename}`;
+    const updated = await mongoStorage.updateUser(id, {
+      avatarUrl: relativePath,
+    });
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    const { password, ...u } = updated;
+    res.json({ success: true, user: u, message: "Avatar updated" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to upload avatar" });
+  }
 });
 
 // Promote user (Super Admin only)

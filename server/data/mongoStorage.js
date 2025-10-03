@@ -73,6 +73,7 @@ class MongoStorage {
       password: userData.password,
       roles: userData.roles || ["user"],
       groups: userData.groups || [],
+      avatarUrl: userData.avatarUrl || "",
       createdAt: new Date(),
       isActive: true,
     };
@@ -190,6 +191,13 @@ class MongoStorage {
       editedAt: null,
     };
     await this.db.collection("messages").insertOne(message);
+    // Also keep a lightweight reference on channel doc for traceability
+    await this.db
+      .collection("channels")
+      .updateOne(
+        { id: message.channelId },
+        { $addToSet: { messages: message.id } }
+      );
     return message;
   }
 }

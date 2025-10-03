@@ -4,6 +4,7 @@ export interface User {
   email: string;
   roles: string[];
   groups: number[];
+  avatarUrl?: string;
   createdAt: Date;
   isActive: boolean;
 }

@@ -1,6 +1,21 @@
 const express = require("express");
 const router = express.Router();
 const mongoStorage = require("../data/mongoStorage");
+const multer = require("multer");
+const path = require("path");
+const database = require("../config/database");
+
+// Multer storage for message images
+const messageStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, "..", "uploads", "messages"));
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `msg_${Date.now()}${ext}`);
+  },
+});
+const uploadMessageFile = multer({ storage: messageStorage });
 
 // Get all channels
 router.get("/", async (req, res) => {
@@ -121,6 +136,112 @@ router.get("/:id/messages", async (req, res) => {
   const messages = await mongoStorage.getMessagesByChannelId(req.params.id);
   res.json(messages);
 });
+
+// Upload image as a message
+router.post(
+  "/:id/messages/image",
+  uploadMessageFile.single("image"),
+  async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const { userId, username } = req.body;
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const channel = await mongoStorage.getChannelById(channelId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
+      if (!(channel.members || []).includes(parseInt(userId))) {
+        return res.status(403).json({ error: "Access denied to channel" });
+      }
+      const imagePath = `/uploads/messages/${req.file.filename}`;
+      const message = await mongoStorage.createMessage({
+        channelId: parseInt(channelId),
+        userId: parseInt(userId),
+        username,
+        content: imagePath,
+        type: "image",
+      });
+      // Save image metadata to images collection
+      try {
+        const db = await database.connect();
+        await db.collection("images").insertOne({
+          userId: parseInt(userId),
+          channelId: parseInt(channelId),
+          messageId: message.id,
+          path: imagePath,
+          size: req.file.size,
+          mimeType: req.file.mimetype,
+          originalName: req.file.originalname,
+          usage: "message",
+          createdAt: new Date(),
+        });
+      } catch (e) {
+        // ignore image metadata save error
+      }
+      // Emit to socket room so all members get the new image message immediately
+      try {
+        const io = req.app.get("io");
+        if (io) {
+          io.to(`channel_${channelId}`).emit("new_message", message);
+        }
+      } catch (e) {
+        // ignore socket emit errors
+      }
+      res.status(201).json({ success: true, message });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to upload image message" });
+    }
+  }
+);
+
+// Upload video as a message
+router.post(
+  "/:id/messages/video",
+  uploadMessageFile.single("video"),
+  async (req, res) => {
+    try {
+      const channelId = req.params.id;
+      const { userId, username } = req.body;
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const channel = await mongoStorage.getChannelById(channelId);
+      if (!channel) return res.status(404).json({ error: "Channel not found" });
+      if (!(channel.members || []).includes(parseInt(userId))) {
+        return res.status(403).json({ error: "Access denied to channel" });
+      }
+      const videoPath = `/uploads/messages/${req.file.filename}`;
+      const message = await mongoStorage.createMessage({
+        channelId: parseInt(channelId),
+        userId: parseInt(userId),
+        username,
+        content: videoPath,
+        type: "video",
+      });
+      // Save metadata
+      try {
+        const db = await database.connect();
+        await db.collection("images").insertOne({
+          userId: parseInt(userId),
+          channelId: parseInt(channelId),
+          messageId: message.id,
+          path: videoPath,
+          size: req.file.size,
+          mimeType: req.file.mimetype,
+          originalName: req.file.originalname,
+          usage: "video",
+          createdAt: new Date(),
+        });
+      } catch (e) {}
+      // Emit to channel
+      try {
+        const io = req.app.get("io");
+        if (io) {
+          io.to(`channel_${channelId}`).emit("new_message", message);
+        }
+      } catch (e) {}
+      res.status(201).json({ success: true, message });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to upload video message" });
+    }
+  }
+);
 
 // Add member to channel
 router.post("/:id/members", async (req, res) => {
