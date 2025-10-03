@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -389,6 +389,10 @@ export class ChatComponent implements OnInit, OnDestroy {
   remoteStream: MediaStream | null = null;
   peerConnection: RTCPeerConnection | null = null;
   previewImageUrl: string | null = null;
+  private rtcTargetUserId: number | null = null;
+
+  @ViewChild('localVideo') localVideoEl!: ElementRef<HTMLVideoElement>;
+  @ViewChild('remoteVideo') remoteVideoEl!: ElementRef<HTMLVideoElement>;
 
   private subscriptions: Subscription[] = [];
   private typingTimer: any;
@@ -522,7 +526,20 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.incomingCall = data;
     });
 
-    this.subscriptions.push(messagesSub, typingSub, userJoinedSub, userLeftSub, callOfferSub);
+    const callAnswerSub = this.socketService.onVideoCallAnswer().subscribe(data => {
+      // Remote answered our offer
+      if (this.peerConnection && data?.answer) {
+        this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer)).catch(console.error);
+      }
+    });
+
+    const iceSub = this.socketService.onIceCandidate().subscribe(data => {
+      if (this.peerConnection && data?.candidate) {
+        this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(console.error);
+      }
+    });
+
+    this.subscriptions.push(messagesSub, typingSub, userJoinedSub, userLeftSub, callOfferSub, callAnswerSub, iceSub);
   }
 
   sendMessage() {
@@ -644,13 +661,41 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   // Video call methods
   async startVideoCall() {
-    console.log('Starting video call...');
+    if (!this.currentUser) return;
+    // Pick a target user in the channel different from current user
+    const targetId = (this.memberUsers.find(u => u.id !== this.currentUser!.id)?.id)
+      || (this.channelMembers.find(id => id !== this.currentUser!.id));
+    if (!targetId) return;
+    this.rtcTargetUserId = targetId;
+    await this.ensurePeerConnection(targetId);
+    if (!this.peerConnection) return;
+    try {
+      const offer = await this.peerConnection.createOffer();
+      await this.peerConnection.setLocalDescription(offer);
+      this.socketService.sendVideoCallOffer(this.channelId, offer, targetId);
+      this.isInCall = true;
+    } catch (e) {
+      console.error('Failed to start video call:', e);
+    }
   }
 
   acceptCall() {
-    console.log('Accepting call...');
-    this.incomingCall = null;
-    this.isInCall = true;
+    if (!this.incomingCall || !this.currentUser) return;
+    const { fromUserId, offer } = this.incomingCall;
+    this.rtcTargetUserId = fromUserId;
+    this.ensurePeerConnection(fromUserId).then(async () => {
+      try {
+        if (!this.peerConnection) throw new Error('Peer not ready');
+        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await this.peerConnection.createAnswer();
+        await this.peerConnection.setLocalDescription(answer);
+        this.socketService.sendVideoCallAnswer(answer, fromUserId);
+        this.isInCall = true;
+        this.incomingCall = null;
+      } catch (e) {
+        console.error('Failed to accept call:', e);
+      }
+    });
   }
 
   rejectCall() {
@@ -667,5 +712,43 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.peerConnection.close();
       this.peerConnection = null;
     }
+    this.rtcTargetUserId = null;
+  }
+
+  private async ensurePeerConnection(targetUserId: number) {
+    if (this.peerConnection) return;
+    // Prepare local media
+    try {
+      if (!this.localStream) {
+        try {
+          this.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } catch (err) {
+          console.error('Failed to get user media:', err);
+          // Fallback to audio-only if camera is busy
+          this.localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        }
+        if (this.localVideoEl?.nativeElement) {
+          this.localVideoEl.nativeElement.srcObject = this.localStream;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to get user media:', e);
+      return;
+    }
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    this.localStream!.getTracks().forEach(track => pc.addTrack(track, this.localStream!));
+    pc.ontrack = (ev) => {
+      const [stream] = ev.streams;
+      this.remoteStream = stream;
+      if (this.remoteVideoEl?.nativeElement) {
+        this.remoteVideoEl.nativeElement.srcObject = stream;
+      }
+    };
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate && this.rtcTargetUserId != null) {
+        this.socketService.sendIceCandidate(ev.candidate, this.rtcTargetUserId);
+      }
+    };
+    this.peerConnection = pc;
   }
 }
