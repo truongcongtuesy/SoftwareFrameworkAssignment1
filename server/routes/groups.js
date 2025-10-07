@@ -125,6 +125,125 @@ router.post("/:id/members", async (req, res) => {
   });
 });
 
+// Request to join group (non-super-admin requires approval)
+router.post("/:id/join", async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required" });
+  }
+
+  const group = await mongoStorage.getGroupById(id);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+
+  const user = await mongoStorage.getUserById(userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  // Already a member/admin
+  if (
+    (group.members || []).includes(user.id) ||
+    (group.admins || []).includes(user.id)
+  ) {
+    return res.json({ success: true, message: "Already in group" });
+  }
+
+  const isSuperAdmin = (user.roles || []).includes("super-admin");
+  if (isSuperAdmin) {
+    // Super admin joins immediately
+    const updatedMembers = Array.from(
+      new Set([...(group.members || []), user.id])
+    );
+    const updatedGroups = Array.from(
+      new Set([...(user.groups || []), parseInt(id)])
+    );
+    await mongoStorage.updateGroup(id, { members: updatedMembers });
+    await mongoStorage.updateUser(user.id, { groups: updatedGroups });
+    return res.json({ success: true, message: "Joined group" });
+  }
+
+  // Add to pendingRequests
+  const pending = Array.from(
+    new Set([...(group.pendingRequests || []), user.id])
+  );
+  await mongoStorage.updateGroup(id, { pendingRequests: pending });
+  return res.json({
+    success: true,
+    message: "Join request submitted and pending approval",
+  });
+});
+
+// Cancel own join request
+router.post("/:id/join/cancel", async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required" });
+  }
+
+  const group = await mongoStorage.getGroupById(id);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+
+  const user = await mongoStorage.getUserById(userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const newPending = (group.pendingRequests || []).filter(
+    (u) => u !== parseInt(userId)
+  );
+  await mongoStorage.updateGroup(id, { pendingRequests: newPending });
+  return res.json({ success: true, message: "Join request cancelled" });
+});
+
+// List pending join requests (returns user summaries)
+router.get("/:id/requests", async (req, res) => {
+  const group = await mongoStorage.getGroupById(req.params.id);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+  const allUsers = await mongoStorage.getAllUsers();
+  const ids = new Set([...(group.pendingRequests || [])]);
+  const users = allUsers
+    .filter((u) => ids.has(u.id))
+    .map(({ password, ...u }) => u);
+  res.json(users);
+});
+
+// Approve join request
+router.post("/:id/requests/:userId/approve", async (req, res) => {
+  const { id, userId } = req.params;
+  const group = await mongoStorage.getGroupById(id);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+  const user = await mongoStorage.getUserById(userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const newPending = (group.pendingRequests || []).filter(
+    (u) => u !== parseInt(userId)
+  );
+  const newMembers = Array.from(
+    new Set([...(group.members || []), parseInt(userId)])
+  );
+  const updatedGroups = Array.from(
+    new Set([...(user.groups || []), parseInt(id)])
+  );
+  await mongoStorage.updateGroup(id, {
+    pendingRequests: newPending,
+    members: newMembers,
+  });
+  await mongoStorage.updateUser(userId, { groups: updatedGroups });
+  res.json({ success: true, message: "Join request approved" });
+});
+
+// Reject join request
+router.post("/:id/requests/:userId/reject", async (req, res) => {
+  const { id, userId } = req.params;
+  const group = await mongoStorage.getGroupById(id);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+  const newPending = (group.pendingRequests || []).filter(
+    (u) => u !== parseInt(userId)
+  );
+  await mongoStorage.updateGroup(id, { pendingRequests: newPending });
+  res.json({ success: true, message: "Join request rejected" });
+});
+
 // Remove member from group
 router.delete("/:id/members/:userId", async (req, res) => {
   const { id, userId } = req.params;

@@ -51,4 +51,25 @@ export class GroupService {
   getGroupChannels(groupId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.apiUrl}/${groupId}/channels`);
   }
+
+  // Join requests flow
+  requestJoinGroup(groupId: number, userId: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${groupId}/join`, { userId });
+  }
+
+  cancelJoinRequest(groupId: number, userId: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${groupId}/join/cancel`, { userId });
+  }
+
+  getGroupJoinRequests(groupId: number): Observable<User[]> {
+    return this.http.get<User[]>(`${this.apiUrl}/${groupId}/requests`);
+  }
+
+  approveJoinRequest(groupId: number, userId: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${groupId}/requests/${userId}/approve`, {});
+  }
+
+  rejectJoinRequest(groupId: number, userId: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${groupId}/requests/${userId}/reject`, {});
+  }
 }

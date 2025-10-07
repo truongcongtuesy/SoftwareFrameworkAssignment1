@@ -51,8 +51,54 @@ router.put("/:id", async (req, res) => {
 // Delete user
 router.delete("/:id", async (req, res) => {
   const { id } = req.params;
+  // Protect root super admin (id 1) from deletion
+  if (parseInt(id) === 1) {
+    return res
+      .status(403)
+      .json({ error: "Root super admin cannot be deleted" });
+  }
   const success = await mongoStorage.deleteUser(id);
   if (!success) return res.status(404).json({ error: "User not found" });
+
+  // Cascade cleanup: remove user from all groups/channels/bans
+  try {
+    const userIdNum = parseInt(id);
+    const allGroups = await mongoStorage.getAllGroups();
+    for (const group of allGroups) {
+      const newMembers = (group.members || []).filter((m) => m !== userIdNum);
+      const newAdmins = (group.admins || []).filter((a) => a !== userIdNum);
+      const updates = {};
+      if (newMembers.length !== (group.members || []).length)
+        updates.members = newMembers;
+      if (newAdmins.length !== (group.admins || []).length)
+        updates.admins = newAdmins;
+      if (Object.keys(updates).length > 0) {
+        await mongoStorage.updateGroup(group.id, updates);
+      }
+    }
+
+    const allChannels = await mongoStorage.getAllChannels();
+    for (const channel of allChannels) {
+      const newChanMembers = (channel.members || []).filter(
+        (m) => m !== userIdNum
+      );
+      const newBanned = (channel.bannedUsers || []).filter(
+        (u) => u !== userIdNum
+      );
+      const updates = {};
+      if (newChanMembers.length !== (channel.members || []).length)
+        updates.members = newChanMembers;
+      if (newBanned.length !== (channel.bannedUsers || []).length)
+        updates.bannedUsers = newBanned;
+      if (Object.keys(updates).length > 0) {
+        await mongoStorage.updateChannel(channel.id, updates);
+      }
+    }
+  } catch (e) {
+    // Log but do not fail deletion response
+    console.error("Cascade cleanup after user delete failed:", e);
+  }
+
   res.json({ success: true, message: "User deleted successfully" });
 });
 

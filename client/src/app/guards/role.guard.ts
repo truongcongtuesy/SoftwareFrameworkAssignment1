@@ -1,24 +1,35 @@
 import { CanActivateFn, Router } from '@angular/router';
 import { inject } from '@angular/core';
+import { of } from 'rxjs';
+import { catchError, map, tap } from 'rxjs/operators';
 import { AuthService } from '../services/auth.service';
+import { UsersService } from '../services/users.service';
 
 export const RoleGuard = (requiredRoles: string[]): CanActivateFn => {
   return () => {
     const authService = inject(AuthService);
+    const usersService = inject(UsersService);
     const router = inject(Router);
 
-    if (!authService.isAuthenticated()) {
+    const current = authService.getCurrentUser();
+    if (!current) {
       router.navigate(['/login']);
       return false;
     }
 
-    const hasRole = requiredRoles.some(role => authService.hasRole(role));
-    if (!hasRole) {
-      router.navigate(['/dashboard']);
-      return false;
-    }
-
-    return true;
+    // Refresh user from server to reflect recent role changes,
+    // then evaluate access based on up-to-date roles.
+    return usersService.getUserById(current.id).pipe(
+      tap((freshUser) => authService.setCurrentUser(freshUser)),
+      map((freshUser) => requiredRoles.some((role) => (freshUser.roles || []).includes(role))),
+      tap((allowed) => {
+        if (!allowed) router.navigate(['/dashboard']);
+      }),
+      catchError(() => {
+        router.navigate(['/login']);
+        return of(false);
+      })
+    );
   };
 };
 
