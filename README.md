@@ -1,345 +1,270 @@
-# Chat System - MEAN Stack Application
+## Chat System - Full-Stack
 
-A real-time chat application built with MongoDB, Express, Angular, and Node.js, featuring Socket.io for real-time communication and Peer.js for video calling capabilities.
+This README documents the repository organization, data structures, client-server responsibilities, REST API, Angular architecture, and the runtime interactions between the Angular client and the Node/Express + MongoDB server with Socket.io realtime.
 
-## Features
+### 1) Git repository organization and usage
 
-### User Roles
-- **Super Admin**: Can promote users to Group Admin, remove any users, upgrade users to Super Admin, and has all Group Admin functions
-- **Group Admin**: Can create groups and channels, remove groups/channels/users they administer, ban users from channels
-- **User**: Can create account, join groups (with admin approval), participate in channels, leave groups, delete themselves
+- Top-level folders:
+  - `client/`: Angular application (components, services, models, guards, routing)
+  - `server/`: Express REST API, Socket.io, MongoDB schema and storage
+- Working model during development:
+  - Backend and frontend evolve in parallel in their respective folders
+  - API contracts stabilized first (under `server/routes/*`); client services consume them
+  - Realtime events consolidated in `server/sockets/socketHandler.js` and mirrored in `client/src/app/services/socket.service.ts`
+  - Static assets (uploaded avatars and message media) are exposed from `server/uploads/*` under `/uploads/*`
 
-### Core Functionality
-- Real-time text chat using Socket.io
-- Video calling with Peer.js
-- User authentication (username/password)
-- Group and channel management
-- Role-based access control
-- Responsive web interface
+Branching (suggested when collaborating):
+- `master/main`: stable code
+- `feature/<name>`: feature work, merged via PRs
+- Small, focused commits: server vs client changes separated where feasible
 
-## Project Structure
-
+Project structure:
 ```
-├── server/                 # Node.js/Express backend
-│   ├── data/              # Data storage layer
-│   ├── models/            # Data models (User, Group, Channel, Message)
-│   ├── routes/            # API routes (auth, users, groups, channels)
-│   ├── sockets/           # Socket.io handlers
+├── client/
+│   ├── angular.json
+│   ├── cypress/
 │   ├── package.json
-│   └── server.js          # Main server file
-├── client/                # Angular frontend
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── components/    # Angular components
-│   │   │   ├── services/      # Angular services
-│   │   │   ├── models/        # TypeScript interfaces
-│   │   │   ├── guards/        # Route guards
-│   │   │   └── app.routes.ts  # Application routes
-│   │   ├── styles.css     # Global styles
-│   │   └── index.html     # Main HTML template
-│   ├── angular.json       # Angular configuration
-│   ├── package.json
-│   └── tsconfig.json      # TypeScript configuration
-└── README.md
+│   └── src/
+│       ├── app/
+│       │   ├── components/
+│       │   │   ├── admin/
+│       │   │   ├── auth/
+│       │   │   ├── chat/
+│       │   │   └── dashboard/
+│       │   ├── guards/
+│       │   ├── models/
+│       │   ├── services/
+│       │   └── app.routes.ts
+│       ├── index.html
+│       └── main.ts
+├── server/
+│   ├── config/
+│   │   ├── database.js
+│   │   └── schema.js
+│   ├── data/
+│   │   └── mongoStorage.js
+│   ├── routes/
+│   │   ├── auth.js
+│   │   ├── users.js
+│   │   ├── groups.js
+│   │   └── channels.js
+│   ├── sockets/
+│   │   └── socketHandler.js
+│   ├── uploads/
+│   └── server.js
+├── README.md
+└── .gitignore
 ```
 
-## Data Models
+### 2) Data structures (client and server)
 
-### User Model
-```typescript
-{
-  id: number,
-  username: string,
-  email: string,
-  password: string,
-  roles: string[],     // ['user', 'group-admin', 'super-admin']
-  groups: number[],    // Array of group IDs
-  createdAt: Date,
+- User (`client/src/app/models/user.model.ts` + persisted in Mongo):
+
+```ts
+id: number
+username: string
+email: string
+roles: string[]
+groups: number[]
+avatarUrl?: string
+createdAt: Date
   isActive: boolean
-}
 ```
 
-### Group Model
-```typescript
-{
-  id: number,
-  name: string,
-  description: string,
-  adminId: number,     // Creator admin ID
-  admins: number[],    // Array of admin user IDs
-  members: number[],   // Array of member user IDs
-  channels: number[],  // Array of channel IDs
-  createdAt: Date,
-  isActive: boolean
-}
+- Group (`client/src/app/models/group.model.ts` + persisted in Mongo):
+
+```ts
+id: number
+name: string
+description: string
+adminId: number
+admins: number[]
+members: number[]
+channels: number[]
+createdAt: Date
+isActive: boolean
 ```
 
-### Channel Model
-```typescript
-{
-  id: number,
-  name: string,
-  description: string,
-  groupId: number,
-  adminId: number,
-  members: number[],
-  bannedUsers: number[],
-  messages: Message[],
-  createdAt: Date,
-  isActive: boolean
-}
+- Channel (`client/src/app/models/channel.model.ts` + persisted in Mongo):
+
+```ts
+id: number
+name: string
+description: string
+groupId: number
+adminId: number
+members: number[]
+bannedUsers: number[]
+messages: number[]
+createdAt: Date
+isActive: boolean
 ```
 
-### Message Model
-```typescript
-{
-  id: number,
-  channelId: number,
-  userId: number,
-  username: string,
-  content: string,
-  type: 'text' | 'image' | 'file' | 'video-call',
-  timestamp: Date,
-  edited: boolean,
-  editedAt?: Date
-}
+- Message (`client/src/app/models/channel.model.ts` + persisted in Mongo):
+
+```ts
+id: number
+channelId: number
+userId: number
+username: string
+content: string
+type: 'text' | 'image' | 'video' | 'file' | 'video-call' | 'system'
+timestamp: Date
+edited: boolean
+editedAt?: Date
 ```
 
-## API Routes
+Server persistence helpers: `server/data/mongoStorage.js` with `getNextId` counters and CRUD for users, groups, channels, messages. Indexes and seeds in `server/config/schema.js`.
 
-### Authentication Routes (`/api/auth`)
-- `POST /login` - User login
-- `POST /register` - User registration
-- `POST /logout` - User logout
+### 3) Client vs Server responsibilities
 
-### User Routes (`/api/users`)
-- `GET /` - Get all users (Super Admin only)
-- `GET /:id` - Get user by ID
-- `PUT /:id` - Update user
-- `DELETE /:id` - Delete user
-- `POST /:id/promote` - Promote user role
-- `POST /:id/demote` - Demote user role
-- `GET /:id/groups` - Get user's groups
+- Server (Express + MongoDB):
+  - Exposes REST API under `/api/*` for auth, users, groups, channels
+  - Validates permissions (e.g., group/channel creation by admins), manages relationships
+  - Handles file uploads with Multer: avatars and message media under `server/uploads/*`
+  - Emits realtime events with Socket.io; persists messages/images
+- Client (Angular):
+  - Auth state in `AuthService` using `localStorage`; guards protect routes
+  - UI composition, data fetching via `UsersService`, `GroupService`, `ChannelService`
+  - Realtime UX via `SocketService` (join channel, receive `new_message`, typing indicators, basic video-call signaling)
 
-### Group Routes (`/api/groups`)
-- `GET /` - Get all groups
-- `GET /:id` - Get group by ID
-- `POST /` - Create new group
-- `PUT /:id` - Update group
-- `DELETE /:id` - Delete group
-- `POST /:id/members` - Add member to group
-- `DELETE /:id/members/:userId` - Remove member from group
-- `GET /:id/members` - Get group members
-- `GET /:id/channels` - Get group channels
+### 4) REST routes: paths, params, returns, purpose
 
-### Channel Routes (`/api/channels`)
-- `GET /` - Get all channels
-- `GET /:id` - Get channel by ID
-- `POST /` - Create new channel
-- `PUT /:id` - Update channel
-- `DELETE /:id` - Delete channel
-- `GET /:id/messages` - Get channel messages
-- `POST /:id/members` - Add member to channel
-- `DELETE /:id/members/:userId` - Remove member from channel
-- `POST /:id/ban` - Ban user from channel
-- `POST /:id/unban` - Unban user from channel
+Auth (`/api/auth`):
+- `POST /login` body `{ username, password }` → `{ success, user, message }`
+- `POST /register` body `{ username, email, password }` → `{ success, user, message }`
+- `POST /logout` → `{ success, message }`
 
-## Socket Events
+Users (`/api/users`):
+- `GET /` → `User[]` (password omitted)
+- `GET /:id` → `User` (password omitted)
+- `PUT /:id` body `Partial<User>` (server strips `id`, `password`) → `{ success, user }`
+- `DELETE /:id` → `{ success, message }` (cascades membership clean-up; protects id 1)
+- `POST /:id/avatar` form-data `avatar` → `{ success, user }` with `avatarUrl`
+- `POST /:id/promote` body `{ role: 'group-admin'|'super-admin' }` → `{ success, user }`
+- `POST /:id/demote` body `{ role: 'group-admin'|'super-admin' }` → `{ success, user }`
+- `GET /:id/groups` → `Group[]` memberships by id
 
-### Client to Server
-- `authenticate` - Authenticate user with socket
-- `join_channel` - Join a specific channel
-- `leave_channel` - Leave a channel
-- `send_message` - Send message to channel
-- `typing_start` - Start typing indicator
-- `typing_stop` - Stop typing indicator
-- `video_call_offer` - Send video call offer
-- `video_call_answer` - Send video call answer
-- `ice_candidate` - Send ICE candidate for WebRTC
+Groups (`/api/groups`):
+- `GET /` → `Group[]`
+- `GET /:id` → `Group`
+- `POST /` body `{ name, description?, adminId }` (admin must have role) → `{ success, group }`
+- `PUT /:id` body `Partial<Group>` (server strips `id`, `adminId`) → `{ success, group }`
+- `DELETE /:id` → `{ success, message }`
+- `POST /:id/members` body `{ userId }` or `{ username }` → `{ success, message, user? }`
+- `POST /:id/join` body `{ userId }` → super-admin joins immediately, otherwise pending request → `{ success, message }`
+- `POST /:id/join/cancel` body `{ userId }` → `{ success, message }`
+- `GET /:id/requests` → `User[]` pending join requests (no passwords)
+- `POST /:id/requests/:userId/approve` → `{ success, message }`
+- `POST /:id/requests/:userId/reject` → `{ success, message }`
+- `DELETE /:id/members/:userId` → `{ success, message }`
+- `GET /:id/members` → `User[]`
+- `GET /:id/channels` → `Channel[]`
 
-### Server to Client
-- `authenticated` - Confirmation of authentication
-- `new_message` - New message received
-- `channel_messages` - Channel message history
-- `user_typing` - User typing notification
-- `user_stopped_typing` - User stopped typing
-- `user_joined` - User joined channel
-- `user_left` - User left channel
-- `video_call_offer` - Incoming video call offer
-- `video_call_answer` - Video call answer received
-- `ice_candidate` - ICE candidate received
-- `error` - Error message
+Channels (`/api/channels`):
+- `GET /` → `Channel[]`
+- `GET /:id` → `Channel`
+- `POST /` body `{ name, description?, groupId, adminId }` (admin must be super or group admin of owning group) → `{ success, channel }`
+- `PUT /:id` body `Partial<Channel>` (server strips `id`, `adminId`, `groupId`) → `{ success, channel }`
+- `DELETE /:id` → `{ success, message }` (also updates owning group `channels`)
+- `GET /:id/messages` → `Message[]`
+- `POST /:id/messages/image` form-data `image`; body includes `userId`, `username` → `{ success, message }`
+- `POST /:id/messages/video` form-data `video`; body includes `userId`, `username` → `{ success, message }`
+- `POST /:id/members` body `{ userId }` (must be member/admin of group) → `{ success, message }`
+- `DELETE /:id/members/:userId` → `{ success, message }`
+- `POST /:id/ban` body `{ userId }` → `{ success, message }`
+- `POST /:id/unban` body `{ userId }` → `{ success, message }`
 
-## Installation and Setup
+Static files:
+- Served under `/uploads/*` for avatars and message media
 
-### Prerequisites
-- Node.js (v14 or higher)
-- npm or yarn
-- Angular CLI
+### 5) Angular architecture
 
-### Backend Setup
-1. Navigate to the server directory:
-   ```bash
-   cd server
-   ```
+- Components: `auth/login`, `auth/register`, `dashboard`, `chat`, `admin`
+- Services: `auth.service.ts`, `users.service.ts`, `group.service.ts`, `channel.service.ts`, `socket.service.ts`
+- Models: `user.model.ts`, `group.model.ts`, `channel.model.ts`
+- Guards: `auth.guard.ts`, `role.guard.ts`
+- Routes: defined in `app.routes.ts`: `login`, `register`, `dashboard` (auth), `chat/:groupId/:channelId` (auth), `admin` (auth + role)
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+### 6) Client–Server interaction details
 
-3. Start the server:
-   ```bash
-   npm start
-   ```
-   
-   For development with auto-reload:
-   ```bash
-   npm run dev
-   ```
+- Login flow:
+  - Client calls `POST /api/auth/login`; on success, stores user in `localStorage` via `AuthService` and emits `authenticate` over Socket.io on connect.
+  - Guards (`AuthGuard`, `RoleGuard`) read refreshed user state to allow/deny access.
+- Dashboard:
+  - Client fetches `GET /api/groups` and `GET /api/users/:id/groups` as needed; create group via `POST /api/groups` then refresh lists; UI reflects changes immediately.
+- Channels + Chat:
+  - Client loads channels per group `GET /api/groups/:id/channels`.
+  - Join a channel via Socket.io `join_channel` (server validates membership); server emits `channel_messages` followed by realtime `new_message` events.
+  - Send text via Socket.io `send_message`; upload images/videos via REST endpoints, which also emit `new_message` server-side.
+- Administration:
+  - Admin views users `GET /api/users`, promotes/demotes via `POST /api/users/:id/(promote|demote)`, deletes via `DELETE /api/users/:id`; client updates lists accordingly.
+- File/media lifecycle:
+  - Avatars: `POST /api/users/:id/avatar` saves to `/uploads/avatars/*` and updates `avatarUrl` on user.
+  - Images/Videos: `POST /api/channels/:id/messages/(image|video)` saves to `/uploads/messages/*`, persists message record, emits `new_message` to channel room.
 
-The server will run on `http://localhost:3000`
+### Setup & run
 
-### Frontend Setup
-1. Navigate to the client directory:
-   ```bash
-   cd client
-   ```
+- Server:
+  - `cd server && npm install && npm start` (listens on `http://localhost:3000`)
+- Client:
+  - `cd client && npm install && ng serve` (serves at `http://localhost:4200`)
+- Default account: username `super`, password `123` (Super Admin)
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+Notes: Passwords are stored in plain text for coursework only; do not use in production. CORS is enabled for the local Angular client; uploads are served from `/uploads/*`.
 
-3. Install Angular CLI globally (if not already installed):
-   ```bash
-   npm install -g @angular/cli
-   ```
+### Getting started (from clone to running client and server)
 
-4. Start the Angular development server:
-   ```bash
-   ng serve
-   ```
+1. Prerequisites
+   - Install Node.js (LTS recommended)
+   - Install Angular CLI globally: `npm install -g @angular/cli`
+   - Install and start MongoDB locally (default URL `mongodb://localhost:27017`)
+     - Ensure the MongoDB service is running before starting the server
 
-The client will run on `http://localhost:4200`
+2. Clone the repository
+   - `git clone <your-repo-url>.git`
+   - `cd SoftwareFrameworkAssignment1`
 
-## Default Login
-- **Username**: super
-- **Password**: 123
-- **Role**: Super Admin
+3. Backend setup (terminal A)
+   - `cd server`
+   - `npm install`
+   - Optional: set environment variables if needed
+     - `MONGODB_URL` (default: `mongodb://localhost:27017`)
+     - `MONGODB_DB` (default: `chat_system`)
+   - Start the server: `npm start`
+   - Expected: Console shows MongoDB connection and "Server running on port 3000"
 
-## Technologies Used
+4. Frontend setup (terminal B)
+   - `cd client`
+   - `npm install`
+   - Start the dev server: `ng serve`
+   - Open `http://localhost:4200`
 
-### Backend
-- Node.js
-- Express.js
-- Socket.io (Real-time communication)
-- CORS (Cross-origin requests)
-- Body-parser (Request parsing)
-- File system (Local data storage)
+5. Log in with the seeded Super Admin
+   - Username: `super`
+   - Password: `123`
 
-### Frontend
-- Angular 16
-- TypeScript
-- RxJS (Reactive programming)
-- Socket.io-client (Real-time communication)
-- PeerJS (WebRTC video calling)
-- Reactive Forms (Form handling)
-- Angular Router (Navigation)
+Troubleshooting
+- If the server fails to start, verify MongoDB is running and reachable at `MONGODB_URL`
+- If uploads fail, ensure the `server/uploads/avatars` and `server/uploads/messages` folders are writable (they are auto-created on startup)
+- If CORS errors appear, confirm the client is served from `http://localhost:4200` and the server from `http://localhost:3000`
 
-## Development Notes
+### Testing
 
-### Data Storage
-Currently using file-based storage on the server (`server/data/storage.json`) and browser `localStorage` for the authenticated user. This will be replaced with MongoDB in a later phase.
+- Server tests (Jest):
+  - One-time setup: `cd server && npm install`
+  - Run all tests: `npm test`
+  - Run in watch mode: `npm run test:watch` (if defined) or `npx jest --watch`
+  - Run a single file: `npx jest tests/auth.test.js`
+  - Environment: the server automatically switches to a separate database when `NODE_ENV=test`.
+    - `server/server.js` sets `process.env.MONGODB_DB = 'chat_system_test'` by default in test mode.
+    - You can also override by exporting `MONGODB_URL` / `MONGODB_DB` before running tests.
 
-### Authentication
-Simple username/password authentication. On login success, the user object is stored in `localStorage` and propagated via `AuthService` (`BehaviorSubject`). Logout always clears client state even if the `/logout` request fails (defensive UX).
-
-### Real-time Features
-- Socket.io delivers chat messages in real-time
-- Typing indicators and presence (join/leave)
-- WebRTC signaling scaffolding exists; PeerJS integration deferred
-
-## Angular Architecture Details
-
-### Components
-- `LoginComponent`: login form, saves user to `localStorage` on success
-- `RegisterComponent`: registration form
-- `DashboardComponent`: lists user groups, create group/channel, join channel, leave group, delete account
-- `ChatComponent`: real-time messages, typing indicator (video call UI scaffold)
-- `AdminComponent`: manage users (super admin) and groups/channels
-
-### Services
-- `AuthService`: auth state management, login/register/logout
-- `GroupService`: CRUD groups, membership
-- `ChannelService`: CRUD channels, membership/ban
-- `SocketService`: Socket.io client, message/typing streams, signaling
-- `UsersService`: user management (get/update/delete, promote/demote)
-
-### Guards
-- `AuthGuard`: requires authentication for protected routes
-- `RoleGuard`: requires roles for admin routes (`group-admin`, `super-admin`)
-
-### Routes
-Protected: `dashboard`, `chat/:groupId/:channelId` (auth), `admin` (auth + role)
-
-## Node Server Architecture Details
-
-### Modules/Files
-- `server.js`: Express app, routes mount, Socket.io init
-- `routes/*`: `auth`, `users`, `groups`, `channels`
-- `sockets/socketHandler.js`: socket events (auth, join/leave, messaging, typing, signaling)
-- `data/dataStorage.js`: JSON persistence; constructs model instances to preserve methods
-- `models/*`: `User`, `Group`, `Channel`, `Message`
-
-### Global State
-- In-memory `connectedUsers` map in `socketHandler`
-
-## REST API Summary
-
-See sections above; highlights:
-- `POST /api/auth/login|register|logout`
-- `/api/users`: GET all/one, PUT update, DELETE, POST `/:id/promote|demote`, GET `/:id/groups`
-- `/api/groups`: CRUD, members (add/remove), list members and channels
-- `/api/channels`: CRUD, messages, members (add/remove), ban/unban
-
-## Client-Server Interaction Flow
-
-1) Login: client posts credentials → server validates against `dataStorage` → client stores user → guards allow access.
-2) Dashboard: client loads groups → filters by membership/adminship → can create group → server persists and returns → UI refreshes.
-3) Channels: client loads channels per group → create channel via REST → list refreshes.
-4) Chat: client authenticates socket, joins channel → server emits history and relays new messages → UI updates via observable.
-5) Admin: super admin fetches users, promote/demote/delete via users API → UI reloads list.
-6) Leave Group/Delete Account: client hits respective endpoints → updates local state/navigation.
-
-### Responsive Design
-The application is designed to work on both desktop and mobile devices with responsive CSS.
-
-## Git Repository Organization
-
-```
-├── main branch (stable releases)
-├── develop branch (integration branch)
-├── feature/ branches (individual features)
-└── hotfix/ branches (critical fixes)
-```
-
-### Branching Strategy
-- `main`: Production-ready code
-- `develop`: Integration branch for features
-- `feature/*`: Individual feature development
-- `hotfix/*`: Critical bug fixes
-
-### Commit Guidelines
-- Frequent commits with descriptive messages
-- Separate commits for frontend and backend changes
-- Use conventional commit format when possible
-
-## Future Enhancements
-- MongoDB integration
-- JWT authentication
-- File upload support
-- Message search functionality
-- User profile management
-- Group discovery
-- Mobile app development
+- Client E2E tests (Cypress):
+  - One-time setup: `cd client && npm install`
+  - Make sure the backend and frontend are running:
+    - Backend: `cd server && npm start` (http://localhost:3000)
+    - Frontend: `cd client && ng serve` (http://localhost:4200)
+  - Open Cypress runner: `cd client && npx cypress open`
+  - Headless run: `cd client && npx cypress run`
+  - Tests live under `client/cypress/e2e/*.cy.ts`. Base URL is configured in `client/cypress.config.ts`.
