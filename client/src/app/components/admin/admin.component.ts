@@ -152,7 +152,7 @@ import { Group } from '../../models/group.model';
                     <tr *ngFor="let group of groups">
                       <td>{{ group.name }}</td>
                       <td>{{ group.description }}</td>
-                      <td>{{ group.members.length + group.admins.length }}</td>
+                      <td>{{ getMemberCount(group) }}</td>
                       <td>{{ group.channels.length }}</td>
                       <td>{{ formatDate(group.createdAt) }}</td>
                       <td>
@@ -208,11 +208,20 @@ import { Group } from '../../models/group.model';
                 </button>
               </div>
 
-              <!-- Add Member Form -->
+              <!-- Add Member Form (by Username) -->
               <div *ngIf="showAddMemberForm" class="form-section">
                 <div class="form-group">
-                  <label>User ID</label>
-                  <input type="number" class="form-control" [(ngModel)]="newMemberId" placeholder="Enter user ID">
+                  <label>Username</label>
+                  <input 
+                    type="text" 
+                    class="form-control" 
+                    [(ngModel)]="newMemberUsername" 
+                    placeholder="Enter username to add"
+                    list="usernames"
+                  >
+                  <datalist id="usernames">
+                    <option *ngFor="let u of allUsers" [value]="u.username"></option>
+                  </datalist>
                 </div>
                 <div class="form-actions">
                   <button class="btn btn-primary" (click)="addMember()">Add Member</button>
@@ -484,7 +493,7 @@ export class AdminComponent implements OnInit {
   
   newGroup = { name: '', description: '' };
   newChannel = { name: '', description: '' };
-  newMemberId: number | null = null;
+  newMemberUsername: string = '';
 
   constructor(
     public authService: AuthService,
@@ -600,13 +609,13 @@ export class AdminComponent implements OnInit {
   }
 
   addMember() {
-    if (!this.newMemberId || !this.selectedGroup) return;
+    if (!this.newMemberUsername.trim() || !this.selectedGroup) return;
 
-    this.groupService.addMember(this.selectedGroup.id, this.newMemberId).subscribe({
+    this.groupService.addMemberByUsername(this.selectedGroup.id, this.newMemberUsername.trim()).subscribe({
       next: () => {
         this.loadGroupMembers();
         this.showAddMemberForm = false;
-        this.newMemberId = null;
+        this.newMemberUsername = '';
       },
       error: (error) => console.error('Error adding member:', error)
     });
@@ -690,6 +699,12 @@ export class AdminComponent implements OnInit {
 
   formatDate(date: Date): string {
     return new Date(date).toLocaleDateString();
+  }
+
+  getMemberCount(group: Group): number {
+    const members = Array.isArray(group.members) ? group.members : [];
+    const admins = Array.isArray(group.admins) ? group.admins : [];
+    return new Set([...(members as number[]), ...(admins as number[])]).size;
   }
 
   logout() {

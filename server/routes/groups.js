@@ -81,13 +81,15 @@ router.delete("/:id", async (req, res) => {
   res.json({ success: true, message: "Group deleted successfully" });
 });
 
-// Add member to group
+// Add member to group (accepts userId or username)
 router.post("/:id/members", async (req, res) => {
   const { id } = req.params;
-  const { userId } = req.body;
+  let { userId, username } = req.body;
 
-  if (!userId) {
-    return res.status(400).json({ error: "UserId is required" });
+  if (!userId && !username) {
+    return res
+      .status(400)
+      .json({ error: "Either userId or username is required" });
   }
 
   const group = await mongoStorage.getGroupById(id);
@@ -95,23 +97,31 @@ router.post("/:id/members", async (req, res) => {
     return res.status(404).json({ error: "Group not found" });
   }
 
-  const user = await mongoStorage.getUserById(userId);
+  let user = null;
+  if (userId) {
+    user = await mongoStorage.getUserById(userId);
+  } else if (username) {
+    user = await mongoStorage.getUserByUsername(username);
+  }
+
   if (!user) {
     return res.status(404).json({ error: "User not found" });
   }
 
+  const numericUserId = parseInt(user.id);
   const updatedMembers = Array.from(
-    new Set([...(group.members || []), parseInt(userId)])
+    new Set([...(group.members || []), numericUserId])
   );
   const updatedGroups = Array.from(
     new Set([...(user.groups || []), parseInt(id)])
   );
   await mongoStorage.updateGroup(id, { members: updatedMembers });
-  await mongoStorage.updateUser(userId, { groups: updatedGroups });
+  await mongoStorage.updateUser(numericUserId, { groups: updatedGroups });
 
   res.json({
     success: true,
     message: "User added to group successfully",
+    user: { id: user.id, username: user.username },
   });
 });
 

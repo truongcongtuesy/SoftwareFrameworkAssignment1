@@ -64,6 +64,9 @@ app.get("/", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+if (process.env.NODE_ENV === "test") {
+  process.env.MONGODB_DB = process.env.MONGODB_DB || "chat_system_test";
+}
 
 // Mongo init before listen
 const mongoStorage = require("./data/mongoStorage");
@@ -73,15 +76,23 @@ async function startServer() {
   try {
     await mongoStorage.init();
     await schema.initialize();
-    server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
+    if (process.env.NODE_ENV !== "test") {
+      server.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    }
   } catch (err) {
     console.error("Failed to start server:", err);
-    process.exit(1);
+    if (process.env.NODE_ENV !== "test") {
+      process.exit(1);
+    } else {
+      throw err;
+    }
   }
 }
 
-startServer();
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}
 
-module.exports = { app, server, io };
+module.exports = { app, server, io, startServer };
